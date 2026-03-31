@@ -1,5 +1,7 @@
 # ChatGPT Lag Fixer (Virtual Scroller)
 
+**原作者：bramvdg**
+**自用修改，仅用于个人使用**
 [![License: PolyForm Strict 1.0.0](https://img.shields.io/badge/License-PolyForm%20Strict%201.0.0-blue)](https://polyformproject.org/licenses/strict/1.0.0)
 
 **The ultimate performance booster for long ChatGPT conversations**
