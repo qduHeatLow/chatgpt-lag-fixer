@@ -15,6 +15,20 @@ window.ChatGPTVirtualScroller = window.ChatGPTVirtualScroller || {};
   scroller.config = {
     /** CSS selector for conversation messages */
     ARTICLE_SELECTOR: 'article[data-testid^="conversation-turn-"]',
+    
+    /** Alternative selectors for newer ChatGPT UI */
+    ALT_MESSAGE_SELECTORS: [
+      'section[data-testid^="conversation-turn-"]',
+      '[data-message-id]',
+      '[class*="message" i]',
+      'div[role="article"]',
+      '[data-testid="message"]',
+      '[data-testid="chat-message"]',
+      'div[class*="chat-message" i]',
+      'div[class*="message-container" i]',
+      'section[class*="message" i]',
+      'div[data-testid^="conversation-turn-"]'
+    ],
 
     /** Extra area above/below the viewport where messages stay mounted */
     MARGIN_PX: 2000,

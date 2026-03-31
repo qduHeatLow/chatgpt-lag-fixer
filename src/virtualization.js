@@ -26,8 +26,8 @@
     const badge = document.createElement("div");
     badge.setAttribute(BADGE_ATTRIBUTE, "1");
 
-    // Little icon + text
-    badge.innerHTML = `<span style="margin-right:4px">⚡</span><span>Lag Fixer active</span>`;
+    // Little icon + text (Chinese)
+    badge.innerHTML = `<span style="margin-right:4px">⚡</span><span>卡顿修复已激活</span>`;
 
     const inputEl = document.querySelector("#prompt-textarea");
     let targetEl = inputEl;
@@ -91,11 +91,6 @@
       badge.style.transform = "translateY(0) scale(1)";
     });
 
-    // Trigger Donation Nudge immediately (it handles its own logic/visibility checks)
-    if (scroller.DonationBadge) {
-      setTimeout(() => scroller.DonationBadge.show(), 100); 
-    }
-
     // After 5 seconds, fade out and remove
     setTimeout(() => {
       badge.style.opacity = "0";
@@ -121,7 +116,13 @@
       '[role="main"]',
       "main",
       '[class*="thread" i]',
-      '[class*="conversation" i]'
+      '[class*="conversation" i]',
+      // New selectors for newer ChatGPT UI
+      '[data-testid="conversation-container"]',
+      '[class*="chat-container" i]',
+      '[class*="messages-container" i]',
+      '[class*="conversation-container" i]',
+      'div[role="main"]'
     ];
 
     for (const selector of selectors) {
@@ -138,7 +139,46 @@
 
   /** @returns {boolean} */
   function hasAnyMessages() {
-    return !!document.querySelector(config.ARTICLE_SELECTOR);
+    // Check primary selector first
+    if (document.querySelector(config.ARTICLE_SELECTOR)) {
+      log("Found messages via primary selector:", config.ARTICLE_SELECTOR);
+      return true;
+    }
+    
+    // Check alternative selectors for newer ChatGPT UI
+    if (config.ALT_MESSAGE_SELECTORS) {
+      for (const selector of config.ALT_MESSAGE_SELECTORS) {
+        if (document.querySelector(selector)) {
+          log("Found messages via alternative selector:", selector);
+          return true;
+        }
+      }
+    }
+    
+    // Additional debug: log common container elements
+    log("Debug: checking common container elements");
+    const commonContainers = [
+      'main',
+      '[role="main"]',
+      'div[class*="chat" i]',
+      'div[class*="conversation" i]',
+      'div[class*="messages" i]'
+    ];
+    
+    for (const selector of commonContainers) {
+      const elements = document.querySelectorAll(selector);
+      if (elements.length > 0) {
+        log(`Found ${elements.length} elements for selector:`, selector);
+        // Log first element's class and structure
+        if (elements[0]) {
+          log(`First element class:`, elements[0].className);
+          log(`First element children count:`, elements[0].children.length);
+        }
+      }
+    }
+    
+    log("No messages found with any selector");
+    return false;
   }
 
   /**
@@ -156,7 +196,15 @@
       }
     }
 
-    const firstMessage = document.querySelector(config.ARTICLE_SELECTOR);
+    // Try to find message elements using primary and alternative selectors
+    let firstMessage = document.querySelector(config.ARTICLE_SELECTOR);
+    
+    if (!firstMessage && config.ALT_MESSAGE_SELECTORS) {
+      for (const selector of config.ALT_MESSAGE_SELECTORS) {
+        firstMessage = document.querySelector(selector);
+        if (firstMessage) break;
+      }
+    }
 
     if (firstMessage instanceof HTMLElement) {
       let ancestor = firstMessage.parentElement;
@@ -180,6 +228,33 @@
           return ancestor;
         }
         ancestor = ancestor.parentElement;
+      }
+    }
+
+    // Check common scroll container selectors for newer ChatGPT UI
+    const scrollContainerSelectors = [
+      '[class*="scroll" i]',
+      '[class*="container" i]',
+      '[class*="messages" i]',
+      '[class*="conversation" i]'
+    ];
+    
+    for (const selector of scrollContainerSelectors) {
+      const container = document.querySelector(selector);
+      if (container instanceof HTMLElement) {
+        const styles = getComputedStyle(container);
+        const overflowY = styles.overflowY;
+        const isScrollable =
+          (overflowY === "auto" || overflowY === "scroll") &&
+          container.scrollHeight > container.clientHeight + 10;
+        
+        if (isScrollable) {
+          log(
+            "Found scroll container via common selector:",
+            selector
+          );
+          return container;
+        }
       }
     }
 
@@ -319,7 +394,8 @@
       if (!node.dataset.virtualId) return;
 
       total += 1;
-      if (node.tagName === "ARTICLE") rendered += 1;
+      // Count any non-spacer element as rendered
+      if (node.dataset.chatgptVirtualSpacer !== "1") rendered += 1;
     });
 
     state.stats.totalMessages = total;
@@ -340,19 +416,42 @@
       return;
     }
 
-    // Single DOM query for all nodes (articles + spacers)
+    // Build selector string including primary and alternative selectors
+    let messageSelectors = config.ARTICLE_SELECTOR;
+    if (config.ALT_MESSAGE_SELECTORS) {
+      messageSelectors += ", " + config.ALT_MESSAGE_SELECTORS.join(", ");
+    }
+
+    log("virtualize: using message selectors:", messageSelectors);
+
+    // Single DOM query for all nodes (messages + spacers)
     const nodes = document.querySelectorAll(
-      `${config.ARTICLE_SELECTOR}, div[data-chatgpt-virtual-spacer="1"]`
+      `${messageSelectors}, div[data-chatgpt-virtual-spacer="1"]`
     );
+    
+    log("virtualize: found", nodes.length, "nodes total");
+    
+    // Count message nodes vs spacer nodes
+    let messageNodeCount = 0;
+    let spacerNodeCount = 0;
+    nodes.forEach(node => {
+      if (node.dataset.chatgptVirtualSpacer === "1") {
+        spacerNodeCount++;
+      } else {
+        messageNodeCount++;
+      }
+    });
+    log("virtualize: message nodes:", messageNodeCount, "spacer nodes:", spacerNodeCount);
+    
     if (!nodes.length) {
       log("virtualize: no messages yet");
       return;
     }
 
-    // Assign virtual IDs to any new articles in the list
+    // Assign virtual IDs to any new messages in the list
     nodes.forEach((node) => {
       if (!(node instanceof HTMLElement)) return;
-      if (node.tagName !== "ARTICLE") return;
+      if (node.dataset.chatgptVirtualSpacer === "1") return;
       
       if (!node.dataset.virtualId) {
         const newId = String(state.nextVirtualId++);
@@ -379,16 +478,17 @@
         relativeBottom < -config.MARGIN_PX ||
         relativeTop > viewport.height + config.MARGIN_PX;
 
-      if (node.tagName === "ARTICLE") {
-        if (isOutside) convertArticleToSpacer(node);
-      } else if (node.dataset.chatgptVirtualSpacer === "1") {
+      if (node.dataset.chatgptVirtualSpacer === "1") {
         if (!isOutside) convertSpacerToArticle(node);
+      } else {
+        // Treat any non-spacer element as a message element
+        if (isOutside) convertArticleToSpacer(node);
       }
     });
 
     // Compute stats using already-queried nodes (re-query needed as DOM may have changed)
     const updatedNodes = document.querySelectorAll(
-      `${config.ARTICLE_SELECTOR}, div[data-chatgpt-virtual-spacer="1"]`
+      `${messageSelectors}, div[data-chatgpt-virtual-spacer="1"]`
     );
     computeStats(updatedNodes);
     log(
